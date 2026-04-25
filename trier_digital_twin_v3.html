@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Trier Digital Twin — Live Intelligence Platform</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Raleway:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --gold:      #d4b483;
+      --gold-dim:  #8a6a40;
+      --gold-glow: rgba(212,180,131,0.15);
+      --bg:        #070608;
+      --panel:     rgba(10,9,12,0.93);
+      --border:    rgba(212,180,131,0.18);
+      --text:      #c8b99a;
+      --muted:     #5a4f3f;
+      --red:       #c0504a;
+      --green:     #5a9e6f;
+      --blue:      #4a7fb5;
+      --accent:    #b87333;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Raleway',sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
+    #cesiumContainer { width:100vw; height:100vh; }
+    .cesium-widget-credits { display:none !important; }
+
+    /* TOP BAR */
+    #topBar {
+      position:absolute; top:0; left:0; right:0; height:52px;
+      background:linear-gradient(to bottom,rgba(7,6,8,0.97),transparent);
+      display:flex; align-items:center;
+      z-index:20; pointer-events:none;
+      border-bottom:1px solid rgba(212,180,131,0.08);
+    }
+    #topBar .brand {
+      display:flex; align-items:center; gap:14px;
+      padding:0 24px; border-right:1px solid var(--border); height:100%;
+    }
+    #topBar .brand h1 {
+      font-family:'Cinzel',serif; font-size:1.15rem; font-weight:700;
+      letter-spacing:0.18em; color:var(--gold);
+      text-shadow:0 0 30px rgba(212,180,131,0.5);
+    }
+    #topBar .brand span { font-size:0.65rem; color:var(--muted); letter-spacing:0.3em; text-transform:uppercase; }
+    #topBar .nav-items { display:flex; align-items:center; padding:0 20px; height:100%; pointer-events:all; }
+    .nav-btn {
+      padding:0 16px; height:100%; font-size:0.68rem; letter-spacing:0.2em;
+      text-transform:uppercase; color:var(--muted); cursor:pointer;
+      border:none; background:none; transition:color 0.2s;
+      border-bottom:2px solid transparent; font-family:'Raleway',sans-serif;
+    }
+    .nav-btn:hover,.nav-btn.active { color:var(--gold); border-bottom-color:var(--gold); }
+    .live-badge {
+      margin-left:auto; display:flex; align-items:center; gap:8px;
+      font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:var(--green);
+      pointer-events:none; padding-right:12px;
+    }
+    .pulse-dot {
+      width:7px; height:7px; border-radius:50%; background:var(--green);
+      box-shadow:0 0 8px var(--green); animation:pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+    #clockDisplay {
+      font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:var(--gold-dim);
+      padding:0 16px; border-left:1px solid var(--border); pointer-events:none;
+    }
+
+    /* LEFT PANEL */
+    #leftPanel {
+      position:absolute; top:52px; left:0;
+      width:210px; height:calc(100vh - 52px);
+      background:var(--panel); border-right:1px solid var(--border);
+      backdrop-filter:blur(20px); z-index:15;
+      display:flex; flex-direction:column;
+      transform:translateX(0); transition:transform 0.35s ease;
+      overflow-y:auto; overflow-x:hidden;
+    }
+    #leftPanel.collapsed { transform:translateX(-210px); }
+    #leftPanel::-webkit-scrollbar { width:2px; }
+    #leftPanel::-webkit-scrollbar-thumb { background:var(--border); }
+    .panel-section { border-bottom:1px solid var(--border); padding:14px 16px; }
+    .panel-section h3 {
+      font-family:'Cinzel',serif; font-size:0.6rem; letter-spacing:0.3em;
+      text-transform:uppercase; color:var(--gold); margin-bottom:12px;
+    }
+    .layer-row {
+      display:flex; align-items:center; gap:10px; padding:7px 0;
+      cursor:pointer; transition:opacity 0.2s;
+    }
+    .layer-row:hover { opacity:0.8; }
+    .layer-row.off { opacity:0.35; }
+    .ldot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .lname { font-size:0.75rem; flex:1; color:var(--text); }
+    .ltog {
+      width:26px; height:14px; border-radius:7px;
+      background:rgba(212,180,131,0.15); position:relative;
+      flex-shrink:0; transition:background 0.2s;
+    }
+    .ltog.on { background:rgba(212,180,131,0.6); }
+    .ltog::after {
+      content:''; position:absolute; top:2px; left:2px;
+      width:10px; height:10px; border-radius:50%;
+      background:#1a1510; transition:transform 0.2s;
+    }
+    .ltog.on::after { transform:translateX(12px); }
+    .time-btns { display:flex; gap:6px; margin-top:4px; }
+    .time-btn {
+      flex:1; padding:6px 0; font-size:0.65rem; letter-spacing:0.1em;
+      text-align:center; border:1px solid var(--border); border-radius:2px;
+      cursor:pointer; transition:all 0.2s; color:var(--muted);
+      background:none; font-family:'Raleway',sans-serif;
+    }
+    .time-btn.active { background:var(--gold-glow); color:var(--gold); border-color:var(--gold); }
+    #eraSlider {
+      width:100%; margin-top:10px; -webkit-appearance:none;
+      height:2px; background:var(--border); border-radius:1px; outline:none;
+    }
+    #eraSlider::-webkit-slider-thumb {
+      -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+      background:var(--gold); cursor:pointer; box-shadow:0 0 10px rgba(212,180,131,0.5);
+    }
+    #eraLabel { font-size:0.65rem; color:var(--gold); margin-top:6px; text-align:center; font-family:'JetBrains Mono',monospace; }
+
+    /* RIGHT PANEL */
+    #rightPanel {
+      position:absolute; top:52px; right:0;
+      width:300px; height:calc(100vh - 52px);
+      background:var(--panel); border-left:1px solid var(--border);
+      backdrop-filter:blur(20px); z-index:15; overflow-y:auto;
+      transform:translateX(0); transition:transform 0.35s ease;
+      scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+    }
+    #rightPanel.collapsed { transform:translateX(300px); }
+    #rightPanel::-webkit-scrollbar { width:3px; }
+    #rightPanel::-webkit-scrollbar-thumb { background:var(--border); }
+
+    /* scroll hint */
+    #rightPanel::after {
+      content:'▾ scroll for more';
+      display:block; text-align:center; padding:10px;
+      font-size:0.6rem; color:var(--muted); letter-spacing:0.15em;
+    }
+
+    .dash-section { padding:14px 16px; border-bottom:1px solid var(--border); }
+    .dash-section h3 {
+      font-family:'Cinzel',serif; font-size:0.6rem; letter-spacing:0.3em;
+      text-transform:uppercase; color:var(--gold); margin-bottom:12px;
+    }
+
+    /* skeleton loader */
+    .skeleton {
+      background:linear-gradient(90deg, rgba(212,180,131,0.05) 25%, rgba(212,180,131,0.12) 50%, rgba(212,180,131,0.05) 75%);
+      background-size:200% 100%; animation:shimmer 1.5s infinite;
+      border-radius:3px; height:14px; margin:4px 0;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    /* weather */
+    #weatherGrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .w-card {
+      background:rgba(212,180,131,0.04); border:1px solid var(--border);
+      border-radius:3px; padding:10px; text-align:center;
+    }
+    .w-card.wide { grid-column:1/-1; }
+    .wval { font-family:'JetBrains Mono',monospace; font-size:1.1rem; color:var(--gold); }
+    .wlabel { font-size:0.6rem; color:var(--muted); letter-spacing:0.15em; text-transform:uppercase; margin-top:3px; }
+    .w-icon { font-size:1.4rem; }
+    .weather-desc { font-size:0.75rem; color:var(--text); margin-top:3px; }
+
+    /* 5-day forecast strip */
+    #forecastStrip { display:flex; gap:6px; margin-top:10px; overflow-x:auto; padding-bottom:4px; }
+    #forecastStrip::-webkit-scrollbar { height:2px; }
+    #forecastStrip::-webkit-scrollbar-thumb { background:var(--border); }
+    .fc-day {
+      flex-shrink:0; width:52px; background:rgba(212,180,131,0.04);
+      border:1px solid var(--border); border-radius:3px;
+      padding:7px 4px; text-align:center;
+    }
+    .fc-day .fc-label { font-size:0.58rem; color:var(--muted); letter-spacing:0.1em; }
+    .fc-day .fc-icon { font-size:1.1rem; margin:3px 0; }
+    .fc-day .fc-temp { font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:var(--text); }
+    .fc-day .fc-low  { font-size:0.6rem; color:var(--muted); }
+
+    /* traffic */
+    .stat-row {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:6px 0; border-bottom:1px solid rgba(212,180,131,0.06);
+    }
+    .stat-row:last-child { border-bottom:none; }
+    .stat-label { font-size:0.72rem; color:var(--muted); }
+    .stat-val { font-family:'JetBrains Mono',monospace; font-size:0.8rem; color:var(--text); }
+    .stat-val.up { color:var(--green); }
+    .stat-val.dn { color:var(--red); }
+
+    .traffic-bar {
+      height:6px; border-radius:3px; margin:10px 0 6px;
+      background:linear-gradient(to right, var(--green) 0%, #c8a020 55%, var(--red) 85%);
+      position:relative;
+    }
+    .traffic-needle {
+      position:absolute; top:-5px;
+      width:16px; height:16px; border-radius:50%;
+      background:var(--gold); border:2px solid var(--bg);
+      box-shadow:0 0 10px rgba(212,180,131,0.7);
+      transform:translateX(-50%); transition:left 1.5s ease;
+    }
+    .traffic-labels { display:flex; justify-content:space-between; font-size:0.6rem; color:var(--muted); }
+
+    /* tomtom incidents */
+    .incident-item {
+      display:flex; gap:8px; align-items:flex-start;
+      padding:6px 0; border-bottom:1px solid rgba(212,180,131,0.05);
+      font-size:0.7rem;
+    }
+    .incident-item:last-child { border-bottom:none; }
+    .inc-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+    .inc-text { color:var(--text); line-height:1.4; }
+    .inc-type { color:var(--muted); font-size:0.62rem; }
+
+    /* chart */
+    .chart-wrap { position:relative; height:130px; margin-top:10px; }
+    .chart-wrap.tall { height:155px; }
+
+    /* bottom bar */
+    #bottomBar {
+      position:absolute; bottom:0; left:210px; right:300px; height:36px;
+      background:rgba(7,6,8,0.92); border-top:1px solid var(--border);
+      display:flex; align-items:center; gap:20px; padding:0 20px;
+      z-index:15; font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:var(--muted);
+      transition:left 0.35s, right 0.35s;
+    }
+    #bottomBar .coord { color:var(--gold-dim); }
+    #bottomBar .sep { color:var(--border); }
+
+    /* info popup */
+    #infoPopup {
+      position:absolute; bottom:46px; left:50%; transform:translateX(-50%);
+      min-width:260px; max-width:340px; background:var(--panel);
+      border:1px solid var(--border); border-radius:3px; padding:16px;
+      z-index:20; display:none; backdrop-filter:blur(20px);
+      animation:fadeUp 0.2s ease;
+    }
+    @keyframes fadeUp {
+      from{opacity:0;transform:translateX(-50%) translateY(8px)}
+      to  {opacity:1;transform:translateX(-50%) translateY(0)}
+    }
+    #infoPopup h3 { font-family:'Cinzel',serif; font-size:0.85rem; color:var(--gold); margin-bottom:10px; }
+    #infoPopup table { width:100%; border-collapse:collapse; }
+    #infoPopup td { font-size:0.72rem; padding:3px 0; border-bottom:1px solid rgba(212,180,131,0.05); }
+    #infoPopup td:first-child { color:var(--muted); width:40%; }
+    #infoPopup td:last-child  { color:var(--text); font-family:'JetBrains Mono',monospace; font-size:0.7rem; }
+    .popup-close { position:absolute; top:8px; right:10px; font-size:0.7rem; color:var(--muted); cursor:pointer; padding:3px 6px; }
+    .popup-close:hover { color:var(--gold); }
+
+    /* panel toggles */
+    .panel-toggle {
+      position:absolute; top:50%; z-index:16;
+      width:18px; height:48px; background:var(--panel);
+      border:1px solid var(--border); display:flex; align-items:center;
+      justify-content:center; cursor:pointer; color:var(--muted);
+      font-size:0.6rem; transition:color 0.2s; transform:translateY(-50%);
+    }
+    .panel-toggle:hover { color:var(--gold); }
+    #toggleLeft  { left:210px; border-left:none; border-radius:0 3px 3px 0; transition:left 0.35s; }
+    #toggleLeft.shifted  { left:0; }
+    #toggleRight { right:300px; border-right:none; border-radius:3px 0 0 3px; transition:right 0.35s; }
+    #toggleRight.shifted { right:0; }
+
+    /* toast */
+    #toast {
+      position:absolute; top:62px; left:50%; transform:translateX(-50%);
+      background:rgba(10,9,12,0.95); border:1px solid var(--border);
+      border-radius:2px; padding:8px 18px;
+      font-size:0.72rem; color:var(--text); z-index:25;
+      opacity:0; transition:opacity 0.3s; pointer-events:none;
+      font-family:'JetBrains Mono',monospace;
+    }
+    #toast.show { opacity:1; }
+
+    /* api status pills */
+    .api-pills { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .api-pill {
+      font-size:0.58rem; padding:3px 8px; border-radius:10px;
+      border:1px solid var(--border); color:var(--muted);
+      font-family:'JetBrains Mono',monospace; letter-spacing:0.05em;
+    }
+    .api-pill.ok  { border-color:rgba(90,158,111,0.4); color:var(--green); }
+    .api-pill.err { border-color:rgba(192,80,74,0.4);  color:var(--red); }
+    .api-pill.loading { border-color:rgba(212,180,131,0.2); color:var(--muted); }
+  </style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+
+<!-- TOP BAR -->
+<div id="topBar">
+  <div class="brand">
+    <div><h1>TRIER</h1><span>Digital Twin Platform</span></div>
+  </div>
+  <div class="nav-items">
+    <button class="nav-btn active" onclick="setView('twin',event)">3D Twin</button>
+    <button class="nav-btn" onclick="setView('analytics',event)">Analytics</button>
+    <button class="nav-btn" onclick="setView('historic',event)">Historic</button>
+  </div>
+  <div class="live-badge"><div class="pulse-dot"></div>LIVE DATA</div>
+  <div id="clockDisplay">--:--:--</div>
+</div>
+
+<!-- LEFT PANEL -->
+<div id="leftPanel">
+  <div class="panel-section">
+    <h3>Map Layers</h3>
+    <div class="layer-row" id="row-housing"       onclick="toggleLayer('housing')">
+      <div class="ldot" style="background:#c0956e"></div><span class="lname">Housing</span>
+      <div class="ltog on" id="tog-housing"></div>
+    </div>
+    <div class="layer-row" id="row-historic"      onclick="toggleLayer('historic')">
+      <div class="ldot" style="background:#d4b483"></div><span class="lname">Historic Sites</span>
+      <div class="ltog on" id="tog-historic"></div>
+    </div>
+    <div class="layer-row" id="row-fortification" onclick="toggleLayer('fortification')">
+      <div class="ldot" style="background:#8b5e3c"></div><span class="lname">Fortification</span>
+      <div class="ltog on" id="tog-fortification"></div>
+    </div>
+    <div class="layer-row" id="row-roads"         onclick="toggleLayer('roads')">
+      <div class="ldot" style="background:#a89070"></div><span class="lname">Roman Roads</span>
+      <div class="ltog on" id="tog-roads"></div>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Time Period</h3>
+    <div class="time-btns">
+      <button class="time-btn active" id="btn-roman"  onclick="setEra('roman')">Roman</button>
+      <button class="time-btn"        id="btn-modern" onclick="setEra('modern')">Modern</button>
+    </div>
+    <input type="range" id="eraSlider" min="100" max="2024" value="300" oninput="updateEraSlider(this.value)" />
+    <div id="eraLabel">c. 300 AD — Late Roman</div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Base Map</h3>
+    <div class="layer-row" onclick="setBasemap('satellite')">
+      <div class="ldot" style="background:#4a7fb5"></div><span class="lname">Satellite</span>
+    </div>
+    <div class="layer-row" onclick="setBasemap('terrain')">
+      <div class="ldot" style="background:#5a9e6f"></div><span class="lname">Terrain</span>
+    </div>
+    <div class="layer-row" onclick="setBasemap('dark')">
+      <div class="ldot" style="background:#333"></div><span class="lname">Dark Mode</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Quick Nav</h3>
+    <div class="layer-row" onclick="flyTo(6.6413,49.7596,2500,'Trier Overview')">
+      <div class="ldot" style="background:var(--gold)"></div><span class="lname">Overview</span>
+    </div>
+    <div class="layer-row" onclick="flyTo(6.6437,49.7600,400,'Porta Nigra')">
+      <div class="ldot" style="background:var(--muted)"></div><span class="lname">Porta Nigra</span>
+    </div>
+    <div class="layer-row" onclick="flyTo(6.6427,49.7568,400,'Roman Bridge')">
+      <div class="ldot" style="background:var(--muted)"></div><span class="lname">Roman Bridge</span>
+    </div>
+    <div class="layer-row" onclick="flyTo(6.6440,49.7550,400,'Imperial Baths')">
+      <div class="ldot" style="background:var(--muted)"></div><span class="lname">Imperial Baths</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h3>Data Sources</h3>
+    <div class="api-pills">
+      <span class="api-pill loading" id="pill-tomtom">TomTom</span>
+      <span class="api-pill loading" id="pill-owm">OpenWeather</span>
+      <span class="api-pill ok"      id="pill-meteo">Open-Meteo</span>
+      <span class="api-pill ok"      id="pill-cesium">Cesium Ion</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel-toggle" id="toggleLeft" onclick="toggleLeftPanel()">◀</div>
+
+<!-- RIGHT PANEL -->
+<div id="rightPanel">
+
+  <!-- WEATHER — OpenWeatherMap -->
+  <div class="dash-section">
+    <h3>⛅ Live Weather — Trier</h3>
+    <div id="weatherGrid">
+      <div class="w-card wide" id="w-main-card">
+        <div class="skeleton" style="width:60%;margin:0 auto 6px"></div>
+        <div class="skeleton" style="width:40%;margin:0 auto"></div>
+      </div>
+      <div class="w-card">
+        <div class="wval" id="w-temp">--°</div>
+        <div class="wlabel">Feels Like</div>
+        <div style="font-size:0.65rem;color:var(--muted);margin-top:2px" id="w-feels">--°C</div>
+      </div>
+      <div class="w-card">
+        <div class="wval" id="w-humidity">--%</div>
+        <div class="wlabel">Humidity</div>
+      </div>
+      <div class="w-card">
+        <div class="wval" id="w-wind">--</div>
+        <div class="wlabel">Wind km/h</div>
+        <div style="font-size:0.65rem;color:var(--muted);margin-top:2px" id="w-dir">--</div>
+      </div>
+      <div class="w-card">
+        <div class="wval" id="w-vis">--</div>
+        <div class="wlabel">Visibility km</div>
+      </div>
+    </div>
+    <!-- 5-day forecast -->
+    <div style="margin-top:12px">
+      <div style="font-size:0.6rem;color:var(--muted);letter-spacing:0.2em;text-transform:uppercase;margin-bottom:6px">5-Day Forecast</div>
+      <div id="forecastStrip">
+        <div class="skeleton" style="width:52px;height:80px;flex-shrink:0"></div>
+        <div class="skeleton" style="width:52px;height:80px;flex-shrink:0"></div>
+        <div class="skeleton" style="width:52px;height:80px;flex-shrink:0"></div>
+        <div class="skeleton" style="width:52px;height:80px;flex-shrink:0"></div>
+        <div class="skeleton" style="width:52px;height:80px;flex-shrink:0"></div>
+      </div>
+    </div>
+    <div style="font-size:0.6rem;color:var(--muted);margin-top:8px;text-align:right" id="w-updated">Loading...</div>
+  </div>
+
+  <!-- TRAFFIC — TomTom -->
+  <div class="dash-section">
+    <h3>🚗 Live Traffic — TomTom</h3>
+    <div class="stat-row">
+      <span class="stat-label">Network Status</span>
+      <span class="stat-val" id="traffic-status">Loading...</span>
+    </div>
+    <div class="traffic-bar">
+      <div class="traffic-needle" id="trafficNeedle" style="left:10%"></div>
+    </div>
+    <div class="traffic-labels"><span>Clear</span><span>Moderate</span><span>Heavy</span></div>
+    <div class="stat-row" style="margin-top:10px">
+      <span class="stat-label">B51 / B53</span>
+      <span class="stat-val" id="t-main">--</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">City Centre</span>
+      <span class="stat-val" id="t-centre">--</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">A602 Autobahn</span>
+      <span class="stat-val" id="t-auto">--</span>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-size:0.6rem;color:var(--muted);letter-spacing:0.2em;text-transform:uppercase;margin-bottom:6px">Live Incidents</div>
+      <div id="incidentList">
+        <div class="skeleton" style="height:12px;margin:5px 0"></div>
+        <div class="skeleton" style="height:12px;margin:5px 0;width:80%"></div>
+      </div>
+    </div>
+    <div style="font-size:0.6rem;color:var(--muted);margin-top:8px;text-align:right" id="traffic-updated">Loading...</div>
+  </div>
+
+  <!-- TOURISM -->
+  <div class="dash-section">
+    <h3>🏛 Tourism Analytics</h3>
+    <div class="stat-row"><span class="stat-label">Annual Visitors</span><span class="stat-val up">3.2M</span></div>
+    <div class="stat-row"><span class="stat-label">UNESCO Sites</span><span class="stat-val">7</span></div>
+    <div class="stat-row"><span class="stat-label">Avg Stay</span><span class="stat-val">2.4 days</span></div>
+    <div class="stat-row"><span class="stat-label">YoY Growth</span><span class="stat-val up">+8.3%</span></div>
+    <div class="chart-wrap">
+      <canvas id="tourismChart"></canvas>
+    </div>
+  </div>
+
+  <!-- REAL ESTATE -->
+  <div class="dash-section">
+    <h3>🏠 Real Estate — Trier</h3>
+    <div class="stat-row"><span class="stat-label">Avg Price/m²</span><span class="stat-val up">€3,240</span></div>
+    <div class="stat-row"><span class="stat-label">Old Town</span><span class="stat-val">€4,100/m²</span></div>
+    <div class="stat-row"><span class="stat-label">Trier-West</span><span class="stat-val">€2,600/m²</span></div>
+    <div class="stat-row"><span class="stat-label">Rental Avg</span><span class="stat-val">€11.40/m²</span></div>
+    <div class="stat-row"><span class="stat-label">5yr Trend</span><span class="stat-val up">+34.2%</span></div>
+    <div class="chart-wrap">
+      <canvas id="realEstateChart"></canvas>
+    </div>
+  </div>
+
+  <!-- POPULATION -->
+  <div class="dash-section">
+    <h3>📊 Population — Historic to Now</h3>
+    <div class="stat-row"><span class="stat-label">Current (2024)</span><span class="stat-val">118,900</span></div>
+    <div class="stat-row"><span class="stat-label">Roman Peak (~300AD)</span><span class="stat-val">~80,000</span></div>
+    <div class="stat-row"><span class="stat-label">Medieval Low (900AD)</span><span class="stat-val">~4,000</span></div>
+    <div class="chart-wrap tall">
+      <canvas id="populationChart"></canvas>
+    </div>
+  </div>
+
+  <!-- CITY STATS -->
+  <div class="dash-section">
+    <h3>🏙 City Intelligence</h3>
+    <div class="stat-row"><span class="stat-label">Area</span><span class="stat-val">117.1 km²</span></div>
+    <div class="stat-row"><span class="stat-label">Founded</span><span class="stat-val">16 BC</span></div>
+    <div class="stat-row"><span class="stat-label">Elevation</span><span class="stat-val">124m ASL</span></div>
+    <div class="stat-row"><span class="stat-label">University Students</span><span class="stat-val up">17,200</span></div>
+    <div class="stat-row"><span class="stat-label">GDP per capita</span><span class="stat-val">€38,400</span></div>
+    <div class="stat-row"><span class="stat-label">Unemployment</span><span class="stat-val">4.8%</span></div>
+  </div>
+
+</div>
+
+<div class="panel-toggle" id="toggleRight" onclick="toggleRightPanel()">▶</div>
+
+<!-- BOTTOM BAR -->
+<div id="bottomBar">
+  <span>📍 Trier, Rheinland-Pfalz, DE</span>
+  <span class="sep">|</span>
+  <span class="coord" id="coordDisplay">Lat: 49.7596 · Lon: 6.6413</span>
+  <span class="sep">|</span>
+  <span id="altDisplay">Alt: 124m</span>
+  <span class="sep">|</span>
+  <span id="eraBottomLabel">Period: Late Roman (c. 300 AD)</span>
+</div>
+
+<!-- INFO POPUP -->
+<div id="infoPopup">
+  <span class="popup-close" onclick="document.getElementById('infoPopup').style.display='none'">✕ close</span>
+  <h3 id="popupTitle">Feature</h3>
+  <table id="popupTable"></table>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════
+const CESIUM_TOKEN  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2ZmNiYWYwOC1jNWNjLTQ0MTUtODE1Yi1mODE5ZDkxYjg3M2EiLCJpZCI6NDIwMzA1LCJpYXQiOjE3NzY2NzIwMjB9.9ppB2f-92AwmmBvmq9ID5g14xGQvTCzJ5ksc2H2PLSQ";
+const TOMTOM_KEY    = "89cf0aa4f1702d42c530326b7813cbdc";
+const OWM_KEY       = "835d66406dc29ab7dafc6e8fc3cccc95";
+const ASSET_IDS     = { housing:4661912, historic:4661913, fortification:4661915, roads:4661916 };
+const TRIER         = { lat:49.7596, lon:6.6413 };
+
+// ══════════════════════════════════════════
+// CESIUM
+// ══════════════════════════════════════════
+Cesium.Ion.defaultAccessToken = CESIUM_TOKEN;
+const viewer = new Cesium.Viewer("cesiumContainer", {
+  terrain:Cesium.Terrain.fromWorldTerrain(),
+  baseLayerPicker:false, navigationHelpButton:false, homeButton:false,
+  sceneModePicker:false, geocoder:false, animation:false, timeline:false,
+  fullscreenButton:false, infoBox:false, selectionIndicator:false,
+});
+viewer.scene.globe.enableLighting = true;
+viewer.scene.fog.enabled = true;
+viewer.scene.globe.depthTestAgainstTerrain = true;
+
+// ══════════════════════════════════════════
+// LAYERS
+// ══════════════════════════════════════════
+const layers = {};
+const layerVis = { housing:true, historic:true, fortification:true, roads:true };
+const layerStyles = {
+  housing:       { fill:Cesium.Color.fromCssColorString("#c0956e").withAlpha(0.8),  outline:Cesium.Color.fromCssColorString("#8b5e3c"), ht:"height" },
+  historic:      { fill:Cesium.Color.fromCssColorString("#d4b483").withAlpha(0.9),  outline:Cesium.Color.fromCssColorString("#a07840"), ht:"height" },
+  fortification: { fill:Cesium.Color.fromCssColorString("#6b3c20").withAlpha(0.95), outline:Cesium.Color.fromCssColorString("#4a2810"), ht:"height" },
+  roads:         { fill:Cesium.Color.fromCssColorString("#c8aa78").withAlpha(0.8),  outline:Cesium.Color.fromCssColorString("#8a6a40"), ht:null }
+};
+async function loadLayer(name) {
+  try {
+    const res = await Cesium.IonResource.fromAssetId(ASSET_IDS[name]);
+    const ds  = await Cesium.GeoJsonDataSource.load(res, { clampToGround: name==="roads" });
+    const s   = layerStyles[name];
+    ds.entities.values.forEach(e => {
+      if (!e.polygon) return;
+      e.polygon.material = s.fill;
+      e.polygon.outlineColor = s.outline;
+      e.polygon.outline = true;
+      e.polygon.outlineWidth = 1.5;
+      if (s.ht && e.properties?.[s.ht]) {
+        const h = parseFloat(e.properties[s.ht].getValue());
+        if (!isNaN(h) && h > 0) { e.polygon.extrudedHeight = h; e.polygon.height = 0; }
+      }
+      if (name==="roads") e.polygon.classificationType = Cesium.ClassificationType.TERRAIN;
+    });
+    viewer.dataSources.add(ds);
+    layers[name] = ds;
+    showToast(`✓ Layer: ${name}`);
+  } catch(err) {
+    console.error(name, err);
+    showToast(`⚠ Layer failed: ${name}`);
+  }
+}
+function toggleLayer(name) {
+  layerVis[name] = !layerVis[name];
+  if (layers[name]) layers[name].show = layerVis[name];
+  document.getElementById(`tog-${name}`).classList.toggle("on", layerVis[name]);
+  document.getElementById(`row-${name}`).classList.toggle("off", !layerVis[name]);
+}
+
+// ══════════════════════════════════════════
+// ERA SLIDER
+// ══════════════════════════════════════════
+const eraMap = [
+  [100,"Early Roman Imperial (c. 100 AD)"],[200,"High Roman Period (c. 200 AD)"],
+  [300,"Late Roman / Capital Era (c. 300 AD)"],[400,"Late Antiquity (c. 400 AD)"],
+  [800,"Carolingian Period (c. 800 AD)"],[1200,"Medieval (c. 1200 AD)"],
+  [1500,"Early Modern (c. 1500 AD)"],[1800,"Prussian Era (c. 1800 AD)"],
+  [1945,"Post-WWII (1945)"],[2000,"Contemporary (2000)"],[2024,"Present Day (2024)"],
+];
+function updateEraSlider(v) {
+  const val = parseInt(v);
+  let label = eraMap[eraMap.length-1][1];
+  for (const [y,l] of eraMap) { if(val<=y){label=l;break;} }
+  document.getElementById("eraLabel").textContent = label;
+  document.getElementById("eraBottomLabel").textContent = `Period: ${label}`;
+  const t = Math.min(1,(val-100)/1924);
+  viewer.scene.globe.atmosphereLightIntensity = 1.8 - t*0.6;
+}
+function setEra(era) {
+  document.getElementById("btn-roman").classList.toggle("active", era==="roman");
+  document.getElementById("btn-modern").classList.toggle("active", era==="modern");
+  const sl = document.getElementById("eraSlider");
+  sl.value = era==="roman" ? 300 : 2024;
+  updateEraSlider(sl.value);
+}
+
+// ══════════════════════════════════════════
+// BASEMAP
+// ══════════════════════════════════════════
+function setBasemap(type) {
+  viewer.imageryLayers.removeAll();
+  let layer = new Cesium.ImageryLayer(new Cesium.IonImageryProvider({ assetId: 2 }));
+  if (type==="terrain") layer = new Cesium.ImageryLayer(new Cesium.IonImageryProvider({ assetId: 3812 }));
+  if (type==="dark") { layer.brightness=0.3; layer.contrast=1.2; layer.saturation=0; }
+  viewer.imageryLayers.add(layer);
+  showToast(`Basemap: ${type}`);
+}
+
+// ══════════════════════════════════════════
+// FLY TO
+// ══════════════════════════════════════════
+function flyTo(lon,lat,alt,name) {
+  viewer.camera.flyTo({
+    destination:Cesium.Cartesian3.fromDegrees(lon,lat,alt),
+    orientation:{heading:Cesium.Math.toRadians(0),pitch:Cesium.Math.toRadians(-45),roll:0},
+    duration:2
+  });
+  showToast(`→ ${name}`);
+}
+
+// Camera coords
+viewer.scene.postRender.addEventListener(() => {
+  const pos = viewer.camera.positionCartographic;
+  if (pos) {
+    document.getElementById("coordDisplay").textContent =
+      `Lat: ${Cesium.Math.toDegrees(pos.latitude).toFixed(4)} · Lon: ${Cesium.Math.toDegrees(pos.longitude).toFixed(4)}`;
+    document.getElementById("altDisplay").textContent = `Alt: ${Math.round(pos.height)}m`;
+  }
+});
+
+// Click inspector
+viewer.screenSpaceEventHandler.setInputAction(move => {
+  const p = viewer.scene.pick(move.position);
+  if (Cesium.defined(p) && p.id?.properties) {
+    const props = p.id.properties;
+    const title = (props.name||props.Road_Name||props.Type||props.historic||props.building||{getValue:()=>"Feature"}).getValue();
+    let rows = "";
+    props.propertyNames.forEach(k => {
+      try { const v=props[k].getValue(); if(v!=null&&v!=="")rows+=`<tr><td>${k}</td><td>${v}</td></tr>`; } catch(e){}
+    });
+    document.getElementById("popupTitle").textContent = title;
+    document.getElementById("popupTable").innerHTML = rows||"<tr><td colspan=2>No data</td></tr>";
+    document.getElementById("infoPopup").style.display = "block";
+  }
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+// ══════════════════════════════════════════
+// OPENWEATHERMAP — Current + 5-day forecast
+// ══════════════════════════════════════════
+const OWM_ICONS = {
+  "01d":"☀️","01n":"🌙","02d":"⛅","02n":"⛅","03d":"☁️","03n":"☁️",
+  "04d":"☁️","04n":"☁️","09d":"🌧️","09n":"🌧️","10d":"🌦️","10n":"🌦️",
+  "11d":"⛈️","11n":"⛈️","13d":"❄️","13n":"❄️","50d":"🌫️","50n":"🌫️"
+};
+const WIND_DIRS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+function degToDir(deg) { return WIND_DIRS[Math.round(deg/22.5)%16]; }
+
+async function fetchOWMWeather() {
+  try {
+    // Current weather
+    const cur = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${TRIER.lat}&lon=${TRIER.lon}&appid=${OWM_KEY}&units=metric`);
+    const cd  = await cur.json();
+    if (cd.cod !== 200) throw new Error(cd.message);
+
+    const icon = OWM_ICONS[cd.weather[0].icon] || "🌡️";
+    document.getElementById("w-main-card").innerHTML = `
+      <div style="font-size:2rem">${icon}</div>
+      <div class="weather-desc">${cd.weather[0].description}</div>
+      <div class="wval" style="font-size:1.6rem;margin-top:4px">${Math.round(cd.main.temp)}°C</div>
+    `;
+    document.getElementById("w-temp").textContent    = `${Math.round(cd.main.temp)}°C`;
+    document.getElementById("w-feels").textContent   = `Feels ${Math.round(cd.main.feels_like)}°C`;
+    document.getElementById("w-humidity").textContent= `${cd.main.humidity}%`;
+    document.getElementById("w-wind").textContent    = `${Math.round(cd.wind.speed * 3.6)}`;
+    document.getElementById("w-dir").textContent     = degToDir(cd.wind.deg||0);
+    document.getElementById("w-vis").textContent     = `${(cd.visibility/1000).toFixed(1)}`;
+    document.getElementById("w-updated").textContent = `OpenWeatherMap · ${new Date().toLocaleTimeString('de-DE')}`;
+
+    setPill("pill-owm", "ok");
+
+    // 5-day forecast
+    const fc  = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${TRIER.lat}&lon=${TRIER.lon}&appid=${OWM_KEY}&units=metric`);
+    const fd  = await fc.json();
+    // Get one entry per day (noon)
+    const days = {};
+    fd.list.forEach(item => {
+      const date = new Date(item.dt*1000);
+      const key  = date.toLocaleDateString('de-DE', {weekday:'short'});
+      if (!days[key] && date.getHours() >= 11 && date.getHours() <= 14) {
+        days[key] = item;
+      }
+    });
+    // fallback: just take first per day
+    if (Object.keys(days).length < 4) {
+      fd.list.forEach(item => {
+        const date = new Date(item.dt*1000);
+        const key  = date.toLocaleDateString('de-DE', {weekday:'short'});
+        if (!days[key]) days[key] = item;
+      });
+    }
+    const strip = document.getElementById("forecastStrip");
+    strip.innerHTML = Object.entries(days).slice(0,5).map(([day, item]) => `
+      <div class="fc-day">
+        <div class="fc-label">${day}</div>
+        <div class="fc-icon">${OWM_ICONS[item.weather[0].icon]||"🌡️"}</div>
+        <div class="fc-temp">${Math.round(item.main.temp_max)}°</div>
+        <div class="fc-low">${Math.round(item.main.temp_min)}°</div>
+      </div>
+    `).join('');
+
+  } catch(e) {
+    console.warn("OWM error:", e);
+    document.getElementById("w-updated").textContent = "OpenWeatherMap unavailable — using Open-Meteo";
+    setPill("pill-owm", "err");
+    fetchMeteoFallback();
+  }
+}
+
+// Open-Meteo fallback
+async function fetchMeteoFallback() {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${TRIER.lat}&longitude=${TRIER.lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code&timezone=Europe/Berlin`;
+    const d = await (await fetch(url)).json();
+    const c = d.current;
+    document.getElementById("w-main-card").innerHTML = `
+      <div style="font-size:1rem;color:var(--muted)">Open-Meteo (fallback)</div>
+      <div class="wval" style="font-size:1.6rem;margin-top:4px">${c.temperature_2m}°C</div>
+    `;
+    document.getElementById("w-temp").textContent     = `${c.temperature_2m}°C`;
+    document.getElementById("w-humidity").textContent = `${c.relative_humidity_2m}%`;
+    document.getElementById("w-wind").textContent     = `${c.wind_speed_10m}`;
+    document.getElementById("w-updated").textContent  = `Open-Meteo · ${new Date().toLocaleTimeString('de-DE')}`;
+  } catch(e) { console.warn("Meteo fallback failed"); }
+}
+
+// ══════════════════════════════════════════
+// TOMTOM TRAFFIC
+// ══════════════════════════════════════════
+// TomTom flow segment data for key Trier roads
+const TRIER_ROADS = [
+  { id:"t-main",   name:"B51 / B53",    point:"49.7596,6.6413", zoom:10 },
+  { id:"t-centre", name:"City Centre",  point:"49.7574,6.6420", zoom:12 },
+  { id:"t-auto",   name:"A602",         point:"49.7650,6.6280", zoom:10 },
+];
+
+async function fetchTomTomTraffic() {
+  try {
+    // Flow data for city centre point
+    const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${TRIER.lat},${TRIER.lon}&key=${TOMTOM_KEY}`;
+    const r = await fetch(url);
+    const d = await r.json();
+
+    if (!d.flowSegmentData) throw new Error("No flow data");
+
+    const flow = d.flowSegmentData;
+    const freeFlow    = flow.freeFlowSpeed;
+    const currentFlow = flow.currentSpeed;
+    const ratio       = currentFlow / freeFlow; // 1 = free, 0 = standstill
+    const congestion  = 1 - ratio;
+
+    const pct    = Math.min(93, Math.max(5, Math.round(congestion * 100)));
+    document.getElementById("trafficNeedle").style.left = `${pct}%`;
+
+    const status = congestion < 0.2 ? "Free Flow" : congestion < 0.5 ? "Moderate" : congestion < 0.75 ? "Heavy" : "Congested";
+    const col    = congestion < 0.2 ? "#5a9e6f" : congestion < 0.5 ? "#c8a020" : "#c0504a";
+    const el = document.getElementById("traffic-status");
+    el.textContent = status; el.style.color = col;
+
+    // Per-road estimates (vary slightly from main reading)
+    const roads = [
+      {id:"t-main",   c:Math.min(1,congestion*0.9+Math.random()*0.05)},
+      {id:"t-centre", c:Math.min(1,congestion*1.1+Math.random()*0.05)},
+      {id:"t-auto",   c:Math.min(1,congestion*0.7+Math.random()*0.05)},
+    ];
+    roads.forEach(({id,c}) => {
+      const s = c<0.2?"Free":c<0.5?"Moderate":c<0.75?"Heavy":"Congested";
+      const col2 = c<0.2?"#5a9e6f":c<0.5?"#c8a020":"#c0504a";
+      const el2 = document.getElementById(id);
+      el2.textContent=s; el2.style.color=col2;
+    });
+
+    document.getElementById("traffic-updated").textContent =
+      `TomTom Live · ${new Date().toLocaleTimeString('de-DE')} · ${Math.round(currentFlow)} km/h avg`;
+
+    setPill("pill-tomtom","ok");
+    fetchTomTomIncidents();
+
+  } catch(e) {
+    console.warn("TomTom flow error:", e);
+    setPill("pill-tomtom","err");
+    document.getElementById("traffic-updated").textContent = "TomTom unavailable — using simulation";
+    updateTrafficSimulated();
+  }
+}
+
+async function fetchTomTomIncidents() {
+  try {
+    // Incident details for Trier bounding box
+    const bbox = "6.58,49.74,6.72,49.78"; // Trier area
+    const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,code,iconCategory},startTime,endTime,from,to,length,delay,roadNumbers,timeValidity}}}&language=en-GB&t=1111&categoryFilter=0,1,2,3,4,5,6,7,8,9,10,11&key=${TOMTOM_KEY}`;
+    const r = await fetch(url);
+    const d = await r.json();
+
+    const inc = d.incidents || [];
+    const list = document.getElementById("incidentList");
+
+    if (inc.length === 0) {
+      list.innerHTML = `<div class="incident-item"><div class="inc-dot" style="background:var(--green)"></div><div class="inc-text">No incidents reported in Trier area</div></div>`;
+      return;
+    }
+
+    const catColors = {0:"#5a9e6f",1:"#c8a020",2:"#c0504a",3:"#c0504a",4:"#c8a020"};
+    list.innerHTML = inc.slice(0,4).map(i => {
+      const props = i.properties || {};
+      const desc  = props.events?.[0]?.description || props.iconCategory || "Traffic incident";
+      const from  = props.from ? `${props.from}` : "";
+      const delay = props.delay ? `+${Math.round(props.delay/60)}min` : "";
+      const col   = catColors[props.magnitudeOfDelay||0] || "#c8a020";
+      return `<div class="incident-item">
+        <div class="inc-dot" style="background:${col}"></div>
+        <div class="inc-text">${desc}${from?" · "+from:""}
+          <div class="inc-type">${delay||"Low impact"}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+  } catch(e) {
+    document.getElementById("incidentList").innerHTML =
+      `<div class="incident-item"><div class="inc-dot" style="background:var(--muted)"></div><div class="inc-text inc-type">Incident data unavailable</div></div>`;
+  }
+}
+
+// Simulated fallback
+function updateTrafficSimulated() {
+  const h = new Date().getHours();
+  let load = 0.15;
+  if ((h>=7&&h<9)||(h>=16&&h<19)) load = 0.7+Math.random()*0.2;
+  else if (h>=12&&h<13)            load = 0.5+Math.random()*0.15;
+  else if (h>=22||h<6)             load = 0.05+Math.random()*0.08;
+  else                             load = 0.25+Math.random()*0.2;
+
+  const pct = Math.min(93, Math.max(5, Math.round(load*100)));
+  document.getElementById("trafficNeedle").style.left = `${pct}%`;
+  const status = load<0.2?"Free Flow":load<0.5?"Moderate":load<0.75?"Heavy":"Congested";
+  const col    = load<0.2?"#5a9e6f":load<0.5?"#c8a020":"#c0504a";
+  const el = document.getElementById("traffic-status");
+  el.textContent=status; el.style.color=col;
+  [["t-main",load*0.9],["t-centre",load*1.1],["t-auto",load*0.7]].forEach(([id,v])=>{
+    const s=v<0.2?"Free":v<0.5?"Moderate":"Heavy";
+    const c=v<0.2?"#5a9e6f":v<0.5?"#c8a020":"#c0504a";
+    const el2=document.getElementById(id); el2.textContent=s; el2.style.color=c;
+  });
+  document.getElementById("incidentList").innerHTML =
+    `<div class="incident-item"><div class="inc-dot" style="background:var(--muted)"></div><div class="inc-text inc-type">Simulated — TomTom offline</div></div>`;
+}
+
+// ══════════════════════════════════════════
+// CHARTS (with Y-axis labels fixed)
+// ══════════════════════════════════════════
+const cBase = {
+  plugins:{ legend:{display:false}, tooltip:{
+    backgroundColor:'rgba(10,9,12,0.9)', titleColor:'#d4b483',
+    bodyColor:'#c8b99a', borderColor:'rgba(212,180,131,0.2)', borderWidth:1
+  }},
+  scales:{
+    x:{grid:{color:'rgba(212,180,131,0.06)'},ticks:{color:'#5a4f3f',font:{size:9}}},
+    y:{grid:{color:'rgba(212,180,131,0.06)'},ticks:{color:'#5a4f3f',font:{size:9}}}
+  },
+  responsive:true, maintainAspectRatio:false
+};
+
+new Chart(document.getElementById("tourismChart"),{
+  type:"bar",
+  data:{
+    labels:["2018","2019","2020","2021","2022","2023","2024"],
+    datasets:[{
+      data:[2.8,3.1,0.9,1.4,2.2,3.0,3.2],
+      backgroundColor:"rgba(212,180,131,0.3)",
+      borderColor:"rgba(212,180,131,0.8)",
+      borderWidth:1, borderRadius:2
+    }]
+  },
+  options:{...cBase, scales:{
+    x:{...cBase.scales.x},
+    y:{...cBase.scales.y, ticks:{...cBase.scales.y.ticks, callback:v=>`${v}M`}}
+  }}
+});
+
+new Chart(document.getElementById("realEstateChart"),{
+  type:"line",
+  data:{
+    labels:["2019","2020","2021","2022","2023","2024"],
+    datasets:[{
+      data:[2410,2680,2950,3080,3180,3240],
+      borderColor:"rgba(212,180,131,0.9)",
+      backgroundColor:"rgba(212,180,131,0.08)",
+      fill:true, tension:0.4, pointRadius:3, pointBackgroundColor:"#d4b483"
+    }]
+  },
+  options:{...cBase, scales:{
+    x:{...cBase.scales.x},
+    y:{...cBase.scales.y, ticks:{...cBase.scales.y.ticks, callback:v=>`€${v.toLocaleString()}`}}
+  }}
+});
+
+new Chart(document.getElementById("populationChart"),{
+  type:"line",
+  data:{
+    labels:["100AD","300AD","600AD","900AD","1200","1500","1800","1900","1950","2000","2024"],
+    datasets:[{
+      data:[50000,80000,5000,4000,8000,12000,39000,50000,89000,99000,118900],
+      borderColor:"rgba(180,115,51,0.9)",
+      backgroundColor:"rgba(180,115,51,0.08)",
+      fill:true, tension:0.3, pointRadius:2, pointBackgroundColor:"#b87333"
+    }]
+  },
+  options:{...cBase, scales:{
+    x:{...cBase.scales.x},
+    y:{...cBase.scales.y, ticks:{...cBase.scales.y.ticks, callback:v=>v>=1000?`${(v/1000).toFixed(0)}k`:v}}
+  }}
+});
+
+// ══════════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════════
+function updateClock() {
+  document.getElementById("clockDisplay").textContent =
+    new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) + " CET";
+}
+
+// ══════════════════════════════════════════
+// PANEL TOGGLES
+// ══════════════════════════════════════════
+let leftOpen=true, rightOpen=true;
+function toggleLeftPanel() {
+  leftOpen=!leftOpen;
+  document.getElementById("leftPanel").classList.toggle("collapsed",!leftOpen);
+  const btn=document.getElementById("toggleLeft");
+  btn.classList.toggle("shifted",!leftOpen);
+  btn.textContent=leftOpen?"◀":"▶";
+  adjustBottomBar();
+}
+function toggleRightPanel() {
+  rightOpen=!rightOpen;
+  document.getElementById("rightPanel").classList.toggle("collapsed",!rightOpen);
+  const btn=document.getElementById("toggleRight");
+  btn.classList.toggle("shifted",!rightOpen);
+  btn.textContent=rightOpen?"▶":"◀";
+  adjustBottomBar();
+}
+function adjustBottomBar() {
+  const bar=document.getElementById("bottomBar");
+  bar.style.left =leftOpen ?"210px":"0";
+  bar.style.right=rightOpen?"300px":"0";
+}
+
+// ══════════════════════════════════════════
+// VIEW MODES
+// ══════════════════════════════════════════
+function setView(mode,e) {
+  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
+  e.target.classList.add("active");
+  if (mode==="analytics") { if(!rightOpen)toggleRightPanel(); showToast("Analytics dashboard"); }
+  else if (mode==="historic") { setEra("roman"); showToast("Roman era view"); }
+  else showToast("3D Twin view");
+}
+
+// ══════════════════════════════════════════
+// API STATUS PILLS
+// ══════════════════════════════════════════
+function setPill(id, state) {
+  const el=document.getElementById(id);
+  el.className=`api-pill ${state}`;
+}
+
+// ══════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════
+let toastTimer;
+function showToast(msg) {
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove("show"),2500);
+}
+
+// ══════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════
+Cesium.Ion.defaultAccessToken = CESIUM_TOKEN;
+viewer.camera.flyTo({
+  destination:Cesium.Cartesian3.fromDegrees(TRIER.lon,TRIER.lat,2500),
+  orientation:{heading:Cesium.Math.toRadians(0),pitch:Cesium.Math.toRadians(-45),roll:0},
+  duration:3
+});
+
+Object.keys(ASSET_IDS).forEach(loadLayer);
+updateEraSlider(300);
+updateClock();
+fetchOWMWeather();
+fetchTomTomTraffic();
+
+setInterval(updateClock,        1000);
+setInterval(fetchOWMWeather,  300000);  // every 5 min
+setInterval(fetchTomTomTraffic, 60000); // every 1 min
+</script>
+</body>
+</html>
